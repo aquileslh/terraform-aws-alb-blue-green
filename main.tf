@@ -89,22 +89,22 @@ resource "aws_security_group_rule" "ssh_ingress_access" {
   cidr_blocks       = ["0.0.0.0/0"]
 }
 # Ingress Security Port 80 (Inbound)
-resource "aws_security_group_rule" "http_ingress_access" {
-  from_port         = 80
-  protocol          = "tcp"
-  security_group_id = aws_security_group.sg_allow_ssh_http.id
-  to_port           = 80
-  type              = "ingress"
-  cidr_blocks       = ["0.0.0.0/0"]
-}
+# resource "aws_security_group_rule" "http_ingress_access" {
+#   from_port         = 80
+#   protocol          = "tcp"
+#   security_group_id = aws_security_group.sg_allow_ssh_http.id
+#   to_port           = 80
+#   type              = "ingress"
+#   cidr_blocks       = ["0.0.0.0/0"]
+# }
 # Ingress Security Port 8080 (Inbound)
 resource "aws_security_group_rule" "http8080_ingress_access" {
-  from_port         = 8080
-  protocol          = "tcp"
-  security_group_id = aws_security_group.sg_allow_ssh_http.id
-  to_port           = 8080
-  type              = "ingress"
-  cidr_blocks       = ["0.0.0.0/0"]
+  from_port                = 8080
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.sg_allow_ssh_http.id
+  to_port                  = 8080
+  type                     = "ingress"
+  source_security_group_id = aws_security_group.alb_sg.id
 }
 # Egress Security (Outbound)
 resource "aws_security_group_rule" "egress_access" {
@@ -134,6 +134,13 @@ resource "aws_security_group" "alb_sg" {
     to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"] # Allow traffic from anywhere (you may want to restrict this)
+  }
+  # Define egress rules to allow all outbound traffic
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
@@ -167,24 +174,33 @@ resource "local_file" "private_key" {
 resource "aws_instance" "ec2_instance_one" {
   ami           = "ami-04cb4ca688797756f" # AWS Linux 2 (Free Tier)
   instance_type = "t2.micro"              # Free Tier eligible instance type
-  count         = 1                       # Create two instances
-  key_name      = aws_key_pair.deployer.key_name
+  #count         = 1                       # Create two instances
+  key_name = aws_key_pair.deployer.key_name
   # UserData script to install Node.js and run a simple HTTP server on port 80
   user_data = <<-EOF
               #!/bin/bash
               yum update -y
               yum install -y nodejs
-              cat <<EOF > /home/ec2-user/server.js
-              const http = require('http');
-              const port = 80;
-              const server = http.createServer((req, res) => {
-                res.statusCode = 200;
-                res.setHeader('Content-Type', 'text/plain');
-                res.end('Hello, Node.js instancia 1!\n');
+              npm install pm2 -g
+              npm install express -g
+              npm install cors -g
+              cat <<EOL > /home/ec2-user/server.js
+              const express = require('express');
+              const cors = require('cors')
+              const app = express()
+              app.use(cors())
+              app.get('/', (req, res) => {
+                  res.end(`Hello PID: 2222`);
               });
-              server.listen(port, () => {
-                console.log('Node.js server is running on port: 80');
+              app.get('/check', (req, res) => {
+                  console.log('Health Check Request');
+                  res.status(200).end();
               });
+              app.listen(8080);
+              console.log(`Api Server running on 8080 port, PID: 2222`);
+              EOL
+              cd /home/ec2-user
+              pm2 start server.js
               EOF
 
   subnet_id              = aws_subnet.public_subnet_one.id
@@ -202,7 +218,7 @@ resource "aws_lb_target_group" "ec2_target_group_one" {
   vpc_id   = aws_vpc.devVPC.id # Use your VPC ID
 
   health_check {
-    path                = "/" # Modify this path as needed
+    path                = "/check" # Modify this path as needed
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
@@ -213,7 +229,7 @@ resource "aws_lb_target_group" "ec2_target_group_one" {
 # Register the EC2 instance with the target group
 resource "aws_lb_target_group_attachment" "ec2_attachment" {
   target_group_arn = aws_lb_target_group.ec2_target_group_one.arn
-  target_id        = aws_instance.ec2_instance_one[0].id
+  target_id        = aws_instance.ec2_instance_one.id
 }
 
 # Create an ALB listener on port 80
@@ -228,31 +244,38 @@ resource "aws_lb_listener" "http_listener_one" {
   }
 }
 
-# resource "aws_lb_listener_rule" "http_redirect_one" {
-#   listener_arn = aws_lb_listener.my_alb_listener.arn
-#   priority     = 100
-
-#   action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.ec2_target_group_one.arn
-#   }
-
-#   condition {
-#     field  = "path-pattern"
-#     values = ["/"] # Forward all requests to the target group
-#   }
-# }
-
 # Create an EC2 instance
 resource "aws_instance" "ec2_instance_two" {
   ami           = "ami-04cb4ca688797756f" # AWS Linux 2 (Free Tier)
   instance_type = "t2.micro"              # Free Tier eligible instance type
-  count         = 1                       # Create two instances
-  key_name      = aws_key_pair.deployer.key_name
+  #count         = 1                       # Create two instances
+  key_name = aws_key_pair.deployer.key_name
   # UserData script to install Node.js and run a simple HTTP server on port 80
   user_data = <<-EOF
               #!/bin/bash
-              bash /tmp/node_server.sh
+             #!/bin/bash
+              yum update -y
+              yum install -y nodejs
+              npm install pm2 -g
+              npm install express -g
+              npm install cors -g
+              cat <<EOL > /home/ec2-user/server.js
+              const express = require('express');
+              const cors = require('cors')
+              const app = express()
+              app.use(cors())
+              app.get('/', (req, res) => {
+                  res.end(`Hello PID: 8888`);
+              });
+              app.get('/check', (req, res) => {
+                  console.log('Health Check Request');
+                  res.status(200).end();
+              });
+              app.listen(8080);
+              console.log(`Api Server running on 8080 port, PID: 8888`);
+              EOL
+              cd /home/ec2-user
+              pm2 start server.js
               EOF
 
   subnet_id              = aws_subnet.public_subnet_two.id
@@ -261,17 +284,36 @@ resource "aws_instance" "ec2_instance_two" {
   tags = {
     Name = "NodeJS-Server-Instance"
   }
+}
 
-  # Use the file provisioner to copy the script to the instance
-  provisioner "file" {
-    source      = "./node_server.sh" # Replace with the actual path to your script
-    destination = "/tmp/node_server.sh"
+
+resource "aws_lb_target_group" "ec2_target_group_two" {
+  name     = "ec2-target-group-two"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.devVPC.id # Use your VPC ID
+
+  health_check {
+    path                = "/check" # Modify this path as needed
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
   }
-  # Execute the script after copying it
-  provisioner "remote-exec" {
-    inline = [
-      "chmod +x /tmp/node_server.sh",
-      "sudo /tmp/node_server.sh",
-    ]
+}
+resource "aws_lb_target_group_attachment" "ec2_attachment_two" {
+  target_group_arn = aws_lb_target_group.ec2_target_group_two.arn
+  target_id        = aws_instance.ec2_instance_two.id
+}
+
+# Create an ALB listener on port 80
+resource "aws_lb_listener" "http_listener_two" {
+  load_balancer_arn = aws_lb.my_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.ec2_target_group_two.arn
   }
 }

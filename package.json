@@ -1,0 +1,22 @@
+{
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "name": "terraform-aws-alb-blue-green",
+  "description": "creating application balancer and instances to deploy blue green",
+  "version": "1.0.0",
+  "main": "serverexpress.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aquileslh/terraform-aws-alb-blue-green.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/aquileslh/terraform-aws-alb-blue-green/issues"
+  },
+  "homepage": "https://github.com/aquileslh/terraform-aws-alb-blue-green#readme"
+}
